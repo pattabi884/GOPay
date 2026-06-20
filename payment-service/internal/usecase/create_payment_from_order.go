@@ -13,7 +13,7 @@ import (
 )
 
 type PaymentRepository interface {
-	CreateIfNotExists(ctx context.Context, payment entity.Payment) (bool, error)
+	CreateSettledIfNotExists(ctx context.Context, payment entity.Payment) (bool, error)
 }
 
 type CreatePaymentFromOrderInput struct {
@@ -58,7 +58,7 @@ func (u *CreatePaymentFromOrderUsecase) Execute(
 		currency,
 	)
 
-	created, err := u.paymentRepo.CreateIfNotExists(ctx, payment)
+	created, err := u.paymentRepo.CreateSettledIfNotExists(ctx, payment)
 	if err != nil {
 		return CreatePaymentFromOrderResult{}, fmt.Errorf("create payment from order: %w", err)
 	}

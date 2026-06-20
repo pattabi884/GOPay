@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -34,24 +35,68 @@ type paymentModel struct {
 	UpdatedAt  time.Time       `gorm:"not null"`
 }
 
+type outboxEventModel struct {
+	ID          int64     `gorm:"primaryKey"`
+	AggregateID uuid.UUID `gorm:"type:uuid;not null"`
+	EventType   string    `gorm:"type:varchar(100);not null"`
+	Payload     []byte    `gorm:"type:jsonb;not null"`
+	Published   bool      `gorm:"not null;default:false"`
+	CreatedAt   time.Time `gorm:"not null"`
+}
+
 func (paymentModel) TableName() string {
 	return "payments"
 }
 
-func (r *GormPaymentRepository) CreateIfNotExists(ctx context.Context, payment entity.Payment) (bool, error) {
+func (outboxEventModel) TableName() string {
+	return "outbox_events"
+}
+
+func (r *GormPaymentRepository) CreateSettledIfNotExists(ctx context.Context, payment entity.Payment) (bool, error) {
+	payment.MarkCompleted()
 
 	model := toPaymentModel(payment)
-	result := r.db.WithContext(ctx).
-		Clauses(clause.OnConflict{
+
+	payload, err := json.Marshal(entity.NewPaymentSettledPayload(payment))
+	if err != nil {
+		return false, fmt.Errorf("marshal payment settled payload: %v: %w", err, apperrors.ErrInternal)
+	}
+
+	outboxModel := outboxEventModel{
+		AggregateID: payment.OrderID,
+		EventType:   entity.PaymentSettledEventType,
+		Payload:     payload,
+		Published:   false,
+		CreatedAt:   time.Now().UTC(),
+	}
+	created := false
+
+	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "order_id"}},
 			DoNothing: true,
-		}).
-		Create(&model)
-	if result.Error != nil {
-		return false, fmt.Errorf("insert payment: %v: %w", result.Error, apperrors.ErrInternal)
-	}
-	return result.RowsAffected == 1, nil
+		}).Create(&model)
 
+		if result.Error != nil {
+			return fmt.Errorf("insert payment: %v: %w", result.Error, apperrors.ErrInternal)
+		}
+
+		if result.RowsAffected == 0 {
+			return nil
+		}
+		created = true
+
+		if err := tx.Create(&outboxModel).Error; err != nil {
+			return fmt.Errorf("insert payment outbox event: %v: %w", err, apperrors.ErrInternal)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return false, fmt.Errorf("create settled payment transaction: %w", err)
+	}
+
+	return created, nil
 }
 
 func toPaymentModel(payment entity.Payment) paymentModel {

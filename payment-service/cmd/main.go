@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/signal"
 	"sync"
+	"time"
+
 	"syscall"
 
 	"gopay/payment-service/internal/config"
@@ -13,6 +15,7 @@ import (
 	"gopay/payment-service/internal/provider"
 	"gopay/payment-service/internal/repository"
 	"gopay/payment-service/internal/usecase"
+	"gopay/pkg/outbox"
 )
 
 func main() {
@@ -31,6 +34,25 @@ func main() {
 	paymentRepo := repository.NewGormPaymentRepository(db)
 	createPaymentUsecase := usecase.NewCreatePaymentFromOrderUsecase(paymentRepo)
 
+	redisClient, err := provider.NewRedisClient(ctx, cfg.RedisAddr)
+	if err != nil {
+		logger.Error("connect redis", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+	defer redisClient.Close()
+
+	publisher := provider.NewKafkaPublisher(cfg.KafkaBrokersList(), logger)
+	defer publisher.Close()
+
+	relay := outbox.NewRelay(outbox.RelayConfig{
+		ServiceName:  "payment-service",
+		DB:           db,
+		Redis:        redisClient,
+		Publisher:    publisher,
+		Logger:       logger,
+		PollInterval: 500 * time.Millisecond,
+		BatchSize:    100,
+	})
 	orderCreatedConsumer := consumer.NewOrderCreatedConsumer(
 		cfg.KafkaBrokersList(),
 		cfg.OrderCreatedTopic,
@@ -40,6 +62,11 @@ func main() {
 	)
 	defer orderCreatedConsumer.Close()
 	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		relay.Run(ctx)
+	}()
 	wg.Add(1)
 	go func() {
 		defer wg.Done()

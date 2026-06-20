@@ -42,3 +42,9 @@ func NewPaymentFromOrder(orderID, customerID uuid.UUID, amount decimal.Decimal, 
 		UpdatedAt:  now,
 	}
 }
+
+func (p *Payment) MarkCompleted() {
+	p.Status = PaymentStatusCompleted
+	p.Version++
+	p.UpdatedAt = time.Now().UTC()
+}

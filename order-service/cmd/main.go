@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"gopay/order-service/internal/config"
+	"gopay/order-service/internal/consumer"
 	"gopay/order-service/internal/controller"
 	"gopay/order-service/internal/provider"
 	"gopay/order-service/internal/repository"
@@ -37,6 +38,7 @@ func main() {
 
 	orderRepo := repository.NewGormOrderRepository(db)
 	createOrderUsecase := usecase.NewCreateOrderUsecase(orderRepo)
+	confirmOrderUsecase := usecase.NewConfirmOrderFromPaymentUseCase(orderRepo)
 
 	orderController := controller.NewOrderController(createOrderUsecase)
 
@@ -87,6 +89,21 @@ func main() {
 			logger.Error("order-service stopped", slog.String("error", err.Error()))
 			stop()
 		}
+	}()
+
+	paymentSettledConsumer := consumer.NewPaymentSettledConsumer(
+		brokers,
+		cfg.PaymentSettledTopic,
+		cfg.PaymentSettledGroupID,
+		confirmOrderUsecase,
+		logger,
+	)
+	defer paymentSettledConsumer.Close()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		paymentSettledConsumer.Run(ctx)
 	}()
 
 	<-ctx.Done()
