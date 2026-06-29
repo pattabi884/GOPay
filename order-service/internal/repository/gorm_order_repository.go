@@ -119,6 +119,45 @@ func (r *GormOrderRepository) MarkConfirmed(ctx context.Context, orderID uuid.UU
 
 }
 
+func (r *GormOrderRepository) MarkCancelled(ctx context.Context, orderID uuid.UUID) (bool, error) {
+	result := r.db.WithContext(ctx).
+		Model(&orderModel{}).
+		Where("id = ? AND status = ?", orderID, entity.OrderStatusPending).
+		Updates(map[string]any{
+			"status":     string(entity.OrderStatusCancelled),
+			"version":    gorm.Expr("version + 1"),
+			"updated_at": time.Now().UTC(),
+		})
+
+	if result.Error != nil {
+		return false, fmt.Errorf("cancel order: %v: %w", result.Error, apperrors.ErrInternal)
+	}
+
+	if result.RowsAffected == 1 {
+		return true, nil
+	}
+
+	var existing orderModel
+	err := r.db.WithContext(ctx).
+		Select("status").
+		Where("id = ?", orderID).
+		First(&existing).Error
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, fmt.Errorf("order not found: %w", apperrors.ErrNotFound)
+	}
+
+	if err != nil {
+		return false, fmt.Errorf("load order status: %v: %w", err, apperrors.ErrInternal)
+	}
+
+	if existing.Status == string(entity.OrderStatusCancelled) {
+		return false, nil
+	}
+
+	return false, fmt.Errorf("order cannot be cancelled from status %s: %w", existing.Status, apperrors.ErrConflict)
+}
+
 func toOrderModel(order entity.Order) orderModel {
 	return orderModel{
 		ID:         order.ID,

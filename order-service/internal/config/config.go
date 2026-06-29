@@ -13,6 +13,8 @@ type Config struct {
 	KafkaBrokers          string
 	PaymentSettledTopic   string
 	PaymentSettledGroupID string
+	PaymentFailedTopic    string
+	PaymentFailedGroupID  string
 }
 
 // 1. migration
@@ -32,6 +34,8 @@ func Load() Config {
 		KafkaBrokers:          getEnv("KAFKA_BROKERS", "127.0.0.1:9092"),
 		PaymentSettledTopic:   getEnv("PAYMENT_SETTLED_TOPIC", "payment.settled"),
 		PaymentSettledGroupID: getEnv("ORDER_PAYMENT_SETTLED_GROUP_ID", "order-service-payment-settled-v1"),
+		PaymentFailedTopic:    getEnv("PAYMENT_FAILED_TOPIC", "payment.failed"),
+		PaymentFailedGroupID:  getEnv("ORDER_PAYMENT_FAILED_GROUP_ID", "order-service-payment-failed-v1"),
 	}
 }
 

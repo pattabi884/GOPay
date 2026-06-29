@@ -48,3 +48,9 @@ func (p *Payment) MarkCompleted() {
 	p.Version++
 	p.UpdatedAt = time.Now().UTC()
 }
+
+func (p *Payment) MarkFailed() {
+	p.Status = PaymentStatusFailed
+	p.Version++
+	p.UpdatedAt = time.Now().UTC()
+}

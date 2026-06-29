@@ -18,3 +18,14 @@ type PaymentSettledPayload struct {
 	Status     string          `json:"status"`
 	SettledAt  time.Time       `json:"settled_at"`
 }
+
+type PaymentFailedPayload struct {
+	PaymentID  uuid.UUID       `json:"payment_id"`
+	OrderID    uuid.UUID       `json:"order_id"`
+	CustomerID uuid.UUID       `json:"customer_id"`
+	Amount     decimal.Decimal `json:"amount"`
+	Currency   string          `json:"currency"`
+	Status     string          `json:"status"`
+	Reason     string          `json:"reason"`
+	FailedAt   time.Time       `json:"failed_at"`
+}

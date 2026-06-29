@@ -99,6 +99,55 @@ func (r *GormPaymentRepository) CreateSettledIfNotExists(ctx context.Context, pa
 	return created, nil
 }
 
+func (r *GormPaymentRepository) CreateFailedIfNotExists(ctx context.Context, payment entity.Payment, reason string) (bool, error) {
+	payment.MarkFailed()
+
+	model := toPaymentModel(payment)
+
+	payload, err := json.Marshal(entity.NewPaymentFailedPayload(payment, reason))
+	if err != nil {
+		return false, fmt.Errorf("marshal payment failed payload: %v: %w", err, apperrors.ErrInternal)
+	}
+
+	outboxModel := outboxEventModel{
+		AggregateID: payment.OrderID,
+		EventType:   entity.PaymentFailedEventType,
+		Payload:     payload,
+		Published:   false,
+		CreatedAt:   time.Now().UTC(),
+	}
+
+	created := false
+
+	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "order_id"}},
+			DoNothing: true,
+		}).Create(&model)
+
+		if result.Error != nil {
+			return fmt.Errorf("insert failed payment: %v: %w", result.Error, apperrors.ErrInternal)
+		}
+
+		if result.RowsAffected == 0 {
+			return nil
+		}
+
+		created = true
+
+		if err := tx.Create(&outboxModel).Error; err != nil {
+			return fmt.Errorf("insert payment failed outbox event: %v: %w", err, apperrors.ErrInternal)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return false, fmt.Errorf("create failed payment transaction: %w", err)
+	}
+
+	return created, nil
+}
+
 func toPaymentModel(payment entity.Payment) paymentModel {
 	return paymentModel{
 		ID:         payment.ID,

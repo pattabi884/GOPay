@@ -32,7 +32,7 @@ func main() {
 	defer sqlDB.Close()
 
 	paymentRepo := repository.NewGormPaymentRepository(db)
-	createPaymentUsecase := usecase.NewCreatePaymentFromOrderUsecase(paymentRepo)
+	createPaymentUsecase := usecase.NewCreatePaymentFromOrderUsecase(paymentRepo, cfg.MockPaymentOutcome)
 
 	redisClient, err := provider.NewRedisClient(ctx, cfg.RedisAddr)
 	if err != nil {

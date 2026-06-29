@@ -14,6 +14,7 @@ import (
 
 type PaymentRepository interface {
 	CreateSettledIfNotExists(ctx context.Context, payment entity.Payment) (bool, error)
+	CreateFailedIfNotExists(ctx context.Context, payment entity.Payment, reason string) (bool, error)
 }
 
 type CreatePaymentFromOrderInput struct {
@@ -30,11 +31,13 @@ type CreatePaymentFromOrderResult struct {
 
 type CreatePaymentFromOrderUsecase struct {
 	paymentRepo PaymentRepository
+	mockOutcome string
 }
 
-func NewCreatePaymentFromOrderUsecase(paymentRepo PaymentRepository) *CreatePaymentFromOrderUsecase {
+func NewCreatePaymentFromOrderUsecase(paymentRepo PaymentRepository, mockOutcome string) *CreatePaymentFromOrderUsecase {
 	return &CreatePaymentFromOrderUsecase{
 		paymentRepo: paymentRepo,
+		mockOutcome: strings.ToLower(strings.TrimSpace(mockOutcome)),
 	}
 }
 
@@ -58,7 +61,16 @@ func (u *CreatePaymentFromOrderUsecase) Execute(
 		currency,
 	)
 
-	created, err := u.paymentRepo.CreateSettledIfNotExists(ctx, payment)
+	var created bool
+	var err error
+
+	switch u.mockOutcome {
+	case "failed":
+		created, err = u.paymentRepo.CreateFailedIfNotExists(ctx, payment, "mock payment failure")
+	default:
+		created, err = u.paymentRepo.CreateSettledIfNotExists(ctx, payment)
+	}
+
 	if err != nil {
 		return CreatePaymentFromOrderResult{}, fmt.Errorf("create payment from order: %w", err)
 	}

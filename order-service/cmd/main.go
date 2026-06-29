@@ -39,6 +39,7 @@ func main() {
 	orderRepo := repository.NewGormOrderRepository(db)
 	createOrderUsecase := usecase.NewCreateOrderUsecase(orderRepo)
 	confirmOrderUsecase := usecase.NewConfirmOrderFromPaymentUseCase(orderRepo)
+	cancelOrderUsecase := usecase.NewCancelOrderFromPaymentUsecase(orderRepo)
 
 	orderController := controller.NewOrderController(createOrderUsecase)
 
@@ -104,6 +105,21 @@ func main() {
 	go func() {
 		defer wg.Done()
 		paymentSettledConsumer.Run(ctx)
+	}()
+
+	paymentFailedConsumer := consumer.NewPaymentFailedConsumer(
+		brokers,
+		cfg.PaymentFailedTopic,
+		cfg.PaymentFailedGroupID,
+		cancelOrderUsecase,
+		logger,
+	)
+	defer paymentFailedConsumer.Close()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		paymentFailedConsumer.Run(ctx)
 	}()
 
 	<-ctx.Done()

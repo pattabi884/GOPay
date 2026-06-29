@@ -6,22 +6,24 @@ import (
 )
 
 type Config struct {
-	AppEnv            string
-	KafkaBrokers      string
-	PostgresDSN       string
-	OrderCreatedTopic string
-	ConsumerGroupID   string
-	RedisAddr         string
+	AppEnv             string
+	KafkaBrokers       string
+	PostgresDSN        string
+	OrderCreatedTopic  string
+	ConsumerGroupID    string
+	RedisAddr          string
+	MockPaymentOutcome string
 }
 
 func Load() Config {
 	return Config{
-		AppEnv:            getEnv("APP_ENV", "development"),
-		KafkaBrokers:      getEnv("KAFKA_BROKERS", "127.0.0.1:9092"),
-		PostgresDSN:       getEnv("POSTGRES_PAYMENT_DSN", "postgres://gopay:gopay@127.0.0.1:5433/gopay_payment?sslmode=disable"),
-		OrderCreatedTopic: getEnv("ORDER_CREATED_TOPIC", "order.created"),
-		ConsumerGroupID:   getEnv("PAYMENT_ORDER_CREATED_GROUP_ID", "payment-service-order-created-v1"),
-		RedisAddr:         getEnv("REDIS_ADDR", "127.0.0.1:6379"),
+		AppEnv:             getEnv("APP_ENV", "development"),
+		KafkaBrokers:       getEnv("KAFKA_BROKERS", "127.0.0.1:9092"),
+		PostgresDSN:        getEnv("POSTGRES_PAYMENT_DSN", "postgres://gopay:gopay@127.0.0.1:5433/gopay_payment?sslmode=disable"),
+		OrderCreatedTopic:  getEnv("ORDER_CREATED_TOPIC", "order.created"),
+		ConsumerGroupID:    getEnv("PAYMENT_ORDER_CREATED_GROUP_ID", "payment-service-order-created-v1"),
+		RedisAddr:          getEnv("REDIS_ADDR", "127.0.0.1:6379"),
+		MockPaymentOutcome: getEnv("PAYMENT_MOCK_OUTCOME", "settled"),
 	}
 }
 

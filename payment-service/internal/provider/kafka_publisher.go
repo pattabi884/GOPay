@@ -58,6 +58,8 @@ func eventTopic(eventType string) string {
 	switch eventType {
 	case "payment.settled.v1":
 		return "payment.settled"
+	case "payment.failed.v1":
+		return "payment.failed"
 	default:
 		return eventType
 	}
