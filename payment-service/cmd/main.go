@@ -2,18 +2,21 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"sync"
-	"time"
-
 	"syscall"
+	"time"
 
 	"gopay/payment-service/internal/config"
 	"gopay/payment-service/internal/consumer"
+	"gopay/payment-service/internal/controller"
 	"gopay/payment-service/internal/provider"
 	"gopay/payment-service/internal/repository"
+	"gopay/payment-service/internal/server"
 	"gopay/payment-service/internal/usecase"
 	"gopay/pkg/outbox"
 )
@@ -23,6 +26,10 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	healthController := controller.NewHealthController()
+	webhookController := controller.NewWebhookController()
+	router := server.NewRouter(healthController, webhookController)
 
 	db, sqlDB, err := provider.NewPostgresDB(cfg.PostgresDSN)
 	if err != nil {
@@ -53,6 +60,7 @@ func main() {
 		PollInterval: 500 * time.Millisecond,
 		BatchSize:    100,
 	})
+
 	orderCreatedConsumer := consumer.NewOrderCreatedConsumer(
 		cfg.KafkaBrokersList(),
 		cfg.OrderCreatedTopic,
@@ -73,11 +81,40 @@ func main() {
 		orderCreatedConsumer.Run(ctx)
 	}()
 
-	logger.Info("payment-service started",
-		slog.String("env", cfg.AppEnv),
-		slog.String("topic", cfg.OrderCreatedTopic),
-		slog.String("group_id", cfg.ConsumerGroupID),
-	)
+	httpServer := &http.Server{
+		Addr:    cfg.HTTPAddr(),
+		Handler: router,
+	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		logger.Info("http server started", slog.String("addr", cfg.HTTPAddr()))
+		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.Error("http server failed", slog.String("error", err.Error()))
+			stop()
+		}
+	}()
+	<-ctx.Done()
+	logger.Info("payment-service shuttting down")
+	shutdownCtx, cancle := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancle()
+	if err := httpServer.Shutdown(shutdownCtx); err != nil {
+		logger.Error("http server shutdown", slog.String("error", err.Error()))
+	}
+	wg.Wait()
+	go func() {
+		logger.Info("payment-service started",
+			slog.String("env", cfg.AppEnv),
+			slog.String("topic", cfg.OrderCreatedTopic),
+			slog.String("group_id", cfg.ConsumerGroupID),
+			slog.String("addr", cfg.HTTPAddr()),
+		)
+		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.Error("payment service stopped", slog.String("error", err.Error()))
+			stop()
+		}
+
+	}()
 
 	<-ctx.Done()
 

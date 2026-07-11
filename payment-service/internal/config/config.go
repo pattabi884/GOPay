@@ -13,6 +13,7 @@ type Config struct {
 	ConsumerGroupID    string
 	RedisAddr          string
 	MockPaymentOutcome string
+	HTTPPort           string
 }
 
 func Load() Config {
@@ -24,7 +25,13 @@ func Load() Config {
 		ConsumerGroupID:    getEnv("PAYMENT_ORDER_CREATED_GROUP_ID", "payment-service-order-created-v1"),
 		RedisAddr:          getEnv("REDIS_ADDR", "127.0.0.1:6379"),
 		MockPaymentOutcome: getEnv("PAYMENT_MOCK_OUTCOME", "settled"),
+		HTTPPort:           getEnv("PAYMENT_SERVICE_PORT", "8082"),
 	}
+}
+
+// HTTPAddr returns the listen address for the HTTP server, e.g. ":8082".
+func (c Config) HTTPAddr() string {
+	return ":" + c.HTTPPort
 }
 
 func (c Config) KafkaBrokersList() []string {

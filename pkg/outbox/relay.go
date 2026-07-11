@@ -34,6 +34,8 @@ type RelayConfig struct {
 	Logger       *slog.Logger
 	PollInterval time.Duration
 	BatchSize    int
+	SweepEvery   int
+	SweepGrace   time.Duration
 }
 
 type Relay struct {
@@ -44,6 +46,8 @@ type Relay struct {
 	logger       *slog.Logger
 	pollInterval time.Duration
 	batchSize    int
+	sweepEvery   int
+	sweepGrace   time.Duration
 }
 
 type outboxEventModel struct {
@@ -66,6 +70,12 @@ func NewRelay(cfg RelayConfig) *Relay {
 	if cfg.BatchSize == 0 {
 		cfg.BatchSize = 100
 	}
+	if cfg.SweepEvery == 0 {
+		cfg.SweepEvery = 60
+	}
+	if cfg.SweepGrace == 0 {
+		cfg.SweepGrace = 10 * time.Second
+	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
@@ -77,6 +87,8 @@ func NewRelay(cfg RelayConfig) *Relay {
 		logger:       cfg.Logger,
 		pollInterval: cfg.PollInterval,
 		batchSize:    cfg.BatchSize,
+		sweepEvery:   cfg.SweepEvery,
+		sweepGrace:   cfg.SweepGrace,
 	}
 }
 
@@ -86,9 +98,18 @@ func (r *Relay) Run(ctx context.Context) {
 
 	r.logger.Info("outbox relay started", slog.String("service", r.serviceName))
 
+	polls := 0
 	for {
 		if err := r.publishBatch(ctx); err != nil {
 			r.logger.Error("outbox relay batch failed", slog.String("error", err.Error()))
+		}
+
+		polls++
+		if polls >= r.sweepEvery {
+			polls = 0
+			if err := r.publishSweep(ctx); err != nil {
+				r.logger.Error("outbox relay sweep failed", slog.String("error", err.Error()))
+			}
 		}
 
 		select {
@@ -98,6 +119,47 @@ func (r *Relay) Run(ctx context.Context) {
 		case <-ticker.C:
 		}
 	}
+}
+
+func (r *Relay) publishSweep(ctx context.Context) error {
+	cutoff := time.Now().UTC().Add(-r.sweepGrace)
+
+	var rows []outboxEventModel
+	if err := r.db.WithContext(ctx).
+		Where("published = ? AND created_at < ?", false, cutoff).
+		Order("id ASC").
+		Limit(r.batchSize).
+		Find(&rows).Error; err != nil {
+		return fmt.Errorf("query outbox laggards: %w", err)
+	}
+
+	if len(rows) == 0 {
+		return nil
+	}
+
+	for _, row := range rows {
+		event := Event{
+			ID:          row.ID,
+			AggregateID: row.AggregateID,
+			EventType:   row.EventType,
+			Payload:     row.Payload,
+			CreatedAt:   row.CreatedAt,
+		}
+
+		if err := r.publisher.Publish(ctx, event); err != nil {
+			return fmt.Errorf("publish laggard event %d: %w", row.ID, err)
+		}
+		if err := r.markPublished(ctx, row.ID); err != nil {
+			return fmt.Errorf("mark laggard event %d published: %w", row.ID, err)
+		}
+	}
+
+	r.logger.Warn("outbox relay swept laggard events",
+		slog.String("service", r.serviceName),
+		slog.Int("count", len(rows)),
+	)
+
+	return nil
 }
 
 func (r *Relay) publishBatch(ctx context.Context) error {
