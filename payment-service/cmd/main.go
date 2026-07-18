@@ -14,6 +14,7 @@ import (
 	"gopay/payment-service/internal/config"
 	"gopay/payment-service/internal/consumer"
 	"gopay/payment-service/internal/controller"
+	"gopay/payment-service/internal/middleware"
 	"gopay/payment-service/internal/provider"
 	"gopay/payment-service/internal/repository"
 	"gopay/payment-service/internal/server"
@@ -24,12 +25,17 @@ import (
 func main() {
 	cfg := config.Load()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	if cfg.RazorpayWebhookSecret == "" {
+		logger.Warn("webhook secret is empty or not set ")
+	}
+	logger.Warn("")
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	healthController := controller.NewHealthController()
-	webhookController := controller.NewWebhookController()
-	router := server.NewRouter(healthController, webhookController)
+	webhookController := controller.NewWebhookController(logger)
+	verifyRazorpay := middleware.VerifyRazorpay(cfg.RazorpayWebhookSecret)
+	router := server.NewRouter(healthController, webhookController, verifyRazorpay)
 
 	db, sqlDB, err := provider.NewPostgresDB(cfg.PostgresDSN)
 	if err != nil {

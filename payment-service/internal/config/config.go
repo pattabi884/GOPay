@@ -6,14 +6,16 @@ import (
 )
 
 type Config struct {
-	AppEnv             string
-	KafkaBrokers       string
-	PostgresDSN        string
-	OrderCreatedTopic  string
-	ConsumerGroupID    string
-	RedisAddr          string
-	MockPaymentOutcome string
-	HTTPPort           string
+	AppEnv                string
+	KafkaBrokers          string
+	PostgresDSN           string
+	OrderCreatedTopic     string
+	ConsumerGroupID       string
+	RedisAddr             string
+	MockPaymentOutcome    string
+	HTTPPort              string
+	RazorpayWebhookSecret string
+	RazorpayKeySecret     string
 }
 
 func Load() Config {
@@ -26,6 +28,9 @@ func Load() Config {
 		RedisAddr:          getEnv("REDIS_ADDR", "127.0.0.1:6379"),
 		MockPaymentOutcome: getEnv("PAYMENT_MOCK_OUTCOME", "settled"),
 		HTTPPort:           getEnv("PAYMENT_SERVICE_PORT", "8082"),
+		RazorpayWebhookSecret: getEnv("RAZORPAY_WEBHOOK_SECRET", ""),
+		RazorpayKeySecret: getEnv("RAZORPAY_KEY_SECRET", ""),
+
 	}
 }
 

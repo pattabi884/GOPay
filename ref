@@ -1,0 +1,21 @@
+Files you'll touch (predict the exact changes before opening each):
+
+internal/config/config.go — two fields (RazorpayKeySecret, RazorpayWebhookSecret), two getEnv lines, plus the vars in .env.example. Key secret is unused until Day 3 — add it anyway, one trip to config.
+New: internal/middleware/verify_razorpay.go — first middleware in the whole repo, so it gets its own package. The factory shape you drilled. Inside, the exact sequence you gated on: read raw → compute → constant-time compare → mismatch: 401 + abort → match: restore body, c.Next().
+internal/server/server.go — attach it to one route. Yesterday's prediction question resolves here: ctrl-click router.POST and look at its signature — it's variadic (...gin.HandlerFunc), so a route can take [verify, handler] and they land adjacent in the handlers slice. Design decision for you: does NewRouter receive the secret string or the already-built middleware func? Both work; one keeps gin knowledge out of main. Pick and be able to defend it.
+controller/webhook_controller.go — stub grows: bind a minimal struct (just Event string with the right json tag) and log the event type. Tomorrow's-you will thank today's-you for the restored body.
+
+Self-test — you can't test an HMAC endpoint without producing a real signature. Two curls after go build ./... passes and the service is up:
+bash# 1. Forged request → expect 401
+curl -i -X POST localhost:8082/webhooks/razorpay \
+  -H 'X-Razorpay-Signature: deadbeef' \
+  --data-binary '{"event":"payment.captured"}'
+
+# 2. Validly signed request → expect 200 + your log line
+BODY='{"event":"payment.captured"}'
+SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$RAZORPAY_WEBHOOK_SECRET" -r | cut -d' ' -f1)
+curl -i -X POST localhost:8082/webhooks/razorpay \
+  -H "X-Razorpay-Signature: $SIG" \
+  --data-binary "$BODY"
+That second curl is you being Razorpay — same math, same secret. If it 401s, your middleware and openssl disagree about the bytes (usually a stray newline — hence printf, not echo).
+Compile, run both curls, then show me the middleware + the wiring. Findings, not fixes, as usual.
